@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 3 * * *"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: foodlence
+          POSTGRES_PASSWORD: foodlence
+          POSTGRES_DB: foodlence
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U foodlence"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies (without the optional semantic-match extras)
+        run: |
+          grep -v -E '^(sentence-transformers)' requirements.txt > requirements.ci.txt
+          pip install -r requirements.ci.txt
+
+      - name: Run tests
+        env:
+          DATABASE_URL: postgresql+asyncpg://foodlence:foodlence@localhost:5432/foodlence
+          DATABASE_URL_DIRECT: postgresql+asyncpg://foodlence:foodlence@localhost:5432/foodlence
+          ADMIN_DATABASE_URL: postgresql+asyncpg://foodlence:foodlence@localhost:5432/foodlence
+          JWT_SECRET: ci-test-secret
+          ADMIN_SESSION_SECRET: ci-test-session-secret
+          CORS_ORIGINS: http://testserver
+          ENABLE_SEMANTIC_MATCH: "false"
+        run: pytest -v
+
+  # Calls the deployed API's maintenance endpoint on a schedule, because
+  # Neon's pg_cron can only run jobs from the 'postgres' database (see
+  # sql/00_schema.sql SECTION 12) and this project's database isn't named
+  # that. Only runs on a schedule, not on every push/PR.
+  refresh-knowledge-base-lookup:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refresh kb.mv_allergen_lookup via the deployed API
+        run: |
+          curl -f -X POST "${{ secrets.API_BASE_URL }}/api/v1/internal/maintenance/refresh-lookup" \
+            -H "x-maintenance-key: ${{ secrets.MAINTENANCE_API_KEY }}"

@@ -1,0 +1,34 @@
+# Local development / CI only. Production always runs against Neon — this
+# compose file exists so nobody needs live Neon credentials to run tests or
+# hack on the API locally.
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: foodlence
+      POSTGRES_PASSWORD: foodlence
+      POSTGRES_DB: foodlence
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U foodlence"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://foodlence:foodlence@postgres:5432/foodlence
+      DATABASE_URL_DIRECT: postgresql+asyncpg://foodlence:foodlence@postgres:5432/foodlence
+      ADMIN_DATABASE_URL: postgresql+asyncpg://foodlence:foodlence@postgres:5432/foodlence
+      JWT_SECRET: local-dev-only-secret
+      ADMIN_SESSION_SECRET: local-dev-only-session-secret
+      CORS_ORIGINS: http://localhost
+      ENABLE_SEMANTIC_MATCH: "false"
+    ports:
+      - "8000:8000"
