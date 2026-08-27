@@ -5,7 +5,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.admin.auth_backend import AdminAuth
 from app.admin.views import ALL_VIEWS
-from app.api.v1 import auth, favorites, profiles, scans, search, sync
+from app.api.v1 import allergen_groups, auth, favorites, profiles, scans, search, sync
 from app.core.config import get_settings
 from app.core.db import admin_engine
 
@@ -27,6 +27,7 @@ app.add_middleware(SessionMiddleware, secret_key=settings.admin_session_secret)
 
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(profiles.router, prefix="/api/v1")
+app.include_router(allergen_groups.router, prefix="/api/v1")
 app.include_router(scans.router, prefix="/api/v1")
 app.include_router(search.router, prefix="/api/v1")
 app.include_router(favorites.router, prefix="/api/v1")
