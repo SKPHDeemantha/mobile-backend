@@ -16,15 +16,12 @@ import argparse
 import asyncio
 import os
 import sys
+from pathlib import Path
 
 import asyncpg
 
-
-def _sqlalchemy_url_to_asyncpg_dsn(url: str) -> str:
-    # DATABASE_URL_DIRECT is written in SQLAlchemy's
-    # "postgresql+asyncpg://..." form for app/core/db.py; asyncpg's own
-    # connect() wants a plain "postgresql://..." DSN.
-    return url.replace("postgresql+asyncpg://", "postgresql://", 1)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from app.core.dsn import to_asyncpg_dsn  # noqa: E402
 
 
 async def apply_file(dsn: str, path: str) -> None:
@@ -51,7 +48,7 @@ def main() -> None:
         print("ERROR: set DATABASE_URL_DIRECT (or pass --url) — this must be the DIRECT, non-pooled Neon endpoint.", file=sys.stderr)
         sys.exit(1)
 
-    dsn = _sqlalchemy_url_to_asyncpg_dsn(url)
+    dsn = to_asyncpg_dsn(url)
     for path in args.files:
         asyncio.run(apply_file(dsn, path))
 

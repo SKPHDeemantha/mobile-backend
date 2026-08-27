@@ -6,7 +6,7 @@ pydantic-settings==2.5.2
 sqlalchemy[asyncio]==2.0.35
 asyncpg==0.30.0
 
-passlib[bcrypt]==1.7.4
+bcrypt==4.2.0
 python-jose[cryptography]==3.3.0
 
 fastapi-mail==1.4.1

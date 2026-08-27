@@ -30,7 +30,10 @@ os.environ.setdefault("CORS_ORIGINS", "http://testserver")
 os.environ.setdefault("ENABLE_SEMANTIC_MATCH", "false")
 
 ROOT = Path(__file__).resolve().parent.parent
-RAW_DSN = os.environ["DATABASE_URL"].replace("postgresql+asyncpg://", "postgresql://", 1)
+
+from app.core.dsn import to_asyncpg_dsn  # noqa: E402
+
+RAW_DSN = to_asyncpg_dsn(os.environ["DATABASE_URL"])
 
 
 async def _reset_schema() -> None:

@@ -1042,15 +1042,26 @@ LEFT JOIN kb.additive_details     ad ON ad.ingredient_id = i.ingredient_id
 LEFT JOIN kb.additive_categories  ac ON ac.additive_category_id = ad.additive_category_id
 WHERE i.is_active;
 
--- REFRESH CONCURRENTLY requires a unique index on the view.
+-- De-duplication guard, not a CONCURRENTLY enabler: REFRESH ... CONCURRENTLY
+-- requires a unique index built from bare column names only, and this one
+-- uses COALESCE(allergen_code, '') — an expression — so it does NOT
+-- qualify (confirmed against a live Neon instance: Postgres raises
+-- "cannot refresh materialized view concurrently" / "HINT: Create a unique
+-- index with no WHERE clause on one or more columns of the materialized
+-- view" for exactly this reason, the hint text being slightly misleading
+-- since the disqualifier here is the expression, not a WHERE clause).
+-- Refreshed as a plain (locking) REFRESH instead — see kb.mv_allergen_lookup
+-- refresh call sites (app/api/v1/sync.py, scripts/seed_knowledge_base.py):
+-- a brief block on this low-traffic, scheduled refresh is an acceptable
+-- trade-off rather than restructuring the view to add a plain-column key.
 CREATE UNIQUE INDEX uq_mv_allergen_lookup
     ON kb.mv_allergen_lookup (ingredient_id, COALESCE(allergen_code, ''));
 
 CREATE INDEX ix_mv_allergen_lookup_name
     ON kb.mv_allergen_lookup USING gin (normalised_name gin_trgm_ops);
 
--- Refresh without blocking readers:
---   REFRESH MATERIALIZED VIEW CONCURRENTLY kb.mv_allergen_lookup;
+-- Refresh (briefly blocks concurrent reads of the view — see note above):
+--   REFRESH MATERIALIZED VIEW kb.mv_allergen_lookup;
 
 
 -- =============================================================================
@@ -1063,7 +1074,7 @@ CREATE INDEX ix_mv_allergen_lookup_name
 -- =============================================================================
 
 -- SELECT cron.schedule('refresh-allergen-lookup', '0 3 * * *',
---     $$REFRESH MATERIALIZED VIEW CONCURRENTLY kb.mv_allergen_lookup$$);
+--     $$REFRESH MATERIALIZED VIEW kb.mv_allergen_lookup$$);  -- not CONCURRENTLY, see SECTION 11
 --
 -- SELECT cron.schedule('purge-old-guest-scans', '30 3 * * *',
 --     $$DELETE FROM app.scans WHERE user_id IS NULL AND scanned_at < now() - interval '30 days'$$);

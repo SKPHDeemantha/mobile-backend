@@ -15,8 +15,12 @@ endpoint — this does a bulk read+write pass, not per-request traffic.
 import asyncio
 import os
 import sys
+from pathlib import Path
 
 import asyncpg
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from app.core.dsn import to_asyncpg_dsn  # noqa: E402
 
 MODEL_NAME = "all-MiniLM-L6-v2"  # must match app/services/embeddings.py
 MODEL_VERSION = "1.0"
@@ -31,7 +35,7 @@ async def main() -> None:
     if not url:
         print("ERROR: set DATABASE_URL_DIRECT", file=sys.stderr)
         sys.exit(1)
-    dsn = url.replace("postgresql+asyncpg://", "postgresql://", 1)
+    dsn = to_asyncpg_dsn(url)
 
     # Imported lazily: torch + sentence-transformers are a heavy, optional
     # dependency (see requirements.txt comment) — no reason to require them

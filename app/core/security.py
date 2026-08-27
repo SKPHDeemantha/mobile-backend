@@ -2,22 +2,28 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from app.core.config import get_settings
 
 settings = get_settings()
 
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
+# Calling bcrypt directly rather than through passlib's CryptContext:
+# passlib 1.7.4 (unmaintained since 2020) ships a bcrypt self-test
+# ("detect_wrap_bug") that crashes with modern bcrypt releases —
+# confirmed live: "ValueError: password cannot be longer than 72 bytes"
+# raised from PASSLIB'S OWN internal calibration hash, before it ever
+# looks at a real submitted password. bcrypt's actual 72-byte input limit
+# (a property of the algorithm itself, not a bug) is enforced deliberately
+# below instead, at the schema layer — see app/schemas/auth.py password
+# max_length.
 def hash_password(plain_password: str) -> str:
-    return _pwd_context.hash(plain_password)
+    return bcrypt.hashpw(plain_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(plain_password: str, password_hash: str) -> bool:
-    return _pwd_context.verify(plain_password, password_hash)
+    return bcrypt.checkpw(plain_password.encode("utf-8"), password_hash.encode("utf-8"))
 
 
 def _now() -> datetime:

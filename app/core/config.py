@@ -9,11 +9,15 @@ class Settings(BaseSettings):
     # --- Database -----------------------------------------------------
     # Pooled endpoint, app_api role. Used for all normal request traffic.
     database_url: str
-    # Direct (non-pooled) endpoint, app_api role. Migrations/backfills only
-    # — never used by the request path.
-    database_url_direct: str
     # Pooled endpoint, app_admin role. SQLAdmin only.
     admin_database_url: str
+    #
+    # NOTE: DATABASE_URL_DIRECT is deliberately NOT a field here. It's read
+    # straight from os.environ by scripts/apply_sql.py, seed_knowledge_base.py
+    # and generate_embeddings.py — one-off tools a developer runs by hand,
+    # never the deployed API process. Making it a required Settings field
+    # would mean a production deploy that (correctly) never sets it fails to
+    # start at all.
 
     # --- Auth -----------------------------------------------------------
     jwt_secret: str

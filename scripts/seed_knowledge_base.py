@@ -17,8 +17,12 @@ import asyncio
 import csv
 import os
 import sys
+from pathlib import Path
 
 import asyncpg
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from app.core.dsn import to_asyncpg_dsn  # noqa: E402
 
 DEFAULT_CSV = os.path.join(os.path.dirname(__file__), "seed_data", "ingredients.csv")
 
@@ -118,7 +122,7 @@ async def main() -> None:
     if not url:
         print("ERROR: set DATABASE_URL_DIRECT — this must be the DIRECT, non-pooled Neon endpoint.", file=sys.stderr)
         sys.exit(1)
-    dsn = url.replace("postgresql+asyncpg://", "postgresql://", 1)
+    dsn = to_asyncpg_dsn(url)
 
     paths = sys.argv[1:] or [DEFAULT_CSV]
 
@@ -126,7 +130,9 @@ async def main() -> None:
     try:
         for path in paths:
             await seed_file(conn, path)
-        await conn.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY kb.mv_allergen_lookup")
+        # Not CONCURRENTLY — see sql/00_schema.sql SECTION 11: the view's
+        # unique index is expression-based, which disqualifies it.
+        await conn.execute("REFRESH MATERIALIZED VIEW kb.mv_allergen_lookup")
         print("Refreshed kb.mv_allergen_lookup")
     finally:
         await conn.close()

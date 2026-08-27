@@ -51,8 +51,12 @@ GRANT EXECUTE ON FUNCTION kb.fn_log_unrecognised_term(text)                     
 GRANT EXECUTE ON FUNCTION app.fn_scan_summary(uuid, varchar)                          TO app_api;
 
 -- The audit trigger inserts as the invoking role; app_api needs INSERT here
--- even though it never selects from it directly.
+-- even though it never selects from it directly. bigserial log_id needs its
+-- OWN sequence grant — INSERT on the table alone is not sufficient in
+-- Postgres (confirmed live: omitting this raises "permission denied for
+-- sequence kb_change_log_log_id_seq" the moment the audit trigger fires).
 GRANT INSERT ON audit.kb_change_log TO app_api;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA audit TO app_api, app_admin;
 
 -- ---------------------------------------------------------------------------
 --  app_admin — everything app_api has, plus knowledge-base curation
@@ -70,11 +74,37 @@ GRANT EXECUTE ON FUNCTION app.fn_scan_summary(uuid, varchar)                    
 
 GRANT SELECT, INSERT ON audit.kb_change_log TO app_admin;
 
+-- REFRESH MATERIALIZED VIEW requires ownership of the view, not just a
+-- GRANT — there is no separate "refresh" privilege. app_admin is the role
+-- that performs maintenance (see /api/v1/internal/maintenance/refresh-lookup,
+-- which uses the admin connection specifically because of this), so it
+-- becomes the owner. app_api never refreshes it directly.
+--
+-- Reassigning ownership requires CURRENT_USER to be a MEMBER of app_admin
+-- first — creating a role does not automatically grant membership in it.
+-- Postgres also requires the NEW owner itself to hold CREATE on the
+-- object's schema (see "ALTER TABLE ... OWNER TO" in the Postgres docs) —
+-- USAGE alone (already granted above) is not enough for an ownership
+-- transfer, only for querying.
+GRANT app_admin TO CURRENT_USER;
+GRANT CREATE ON SCHEMA kb TO app_admin;
+ALTER MATERIALIZED VIEW kb.mv_allergen_lookup OWNER TO app_admin;
+
 -- Newly created objects (e.g. from a future migration file) should inherit
 -- these same grants automatically, so nobody has to remember to re-grant.
+-- Sequences need their own DEFAULT PRIVILEGES clause — "ON TABLES" does not
+-- cover them (see the audit.kb_change_log_log_id_seq gap above).
 ALTER DEFAULT PRIVILEGES IN SCHEMA app FOR ROLE CURRENT_USER
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_api, app_admin;
+ALTER DEFAULT PRIVILEGES IN SCHEMA app FOR ROLE CURRENT_USER
+    GRANT USAGE ON SEQUENCES TO app_api, app_admin;
 ALTER DEFAULT PRIVILEGES IN SCHEMA kb FOR ROLE CURRENT_USER
     GRANT SELECT ON TABLES TO app_api;
 ALTER DEFAULT PRIVILEGES IN SCHEMA kb FOR ROLE CURRENT_USER
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_admin;
+ALTER DEFAULT PRIVILEGES IN SCHEMA kb FOR ROLE CURRENT_USER
+    GRANT USAGE ON SEQUENCES TO app_admin;
+ALTER DEFAULT PRIVILEGES IN SCHEMA audit FOR ROLE CURRENT_USER
+    GRANT SELECT, INSERT ON TABLES TO app_api, app_admin;
+ALTER DEFAULT PRIVILEGES IN SCHEMA audit FOR ROLE CURRENT_USER
+    GRANT USAGE ON SEQUENCES TO app_api, app_admin;

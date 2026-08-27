@@ -3,8 +3,20 @@ ingredients, allergens, additives, aliases, translations, unrecognised terms."""
 
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, MetaData, SmallInteger, String, Table, Text, text
 from sqlalchemy.dialects.postgresql import CITEXT, TIMESTAMP, UUID
+from sqlalchemy.dialects.postgresql import ENUM as PGEnum
 
 metadata = MetaData(schema="kb")
+
+# create_type=False on all three: the Postgres ENUM types already exist
+# (created by sql/00_schema.sql SECTION 3) — these objects exist only to
+# tell SQLAlchemy/asyncpg what type OID to bind values as on INSERT/UPDATE.
+# Without this, asyncpg sends plain VARCHAR and Postgres raises
+# "column ... is of type kb.x but expression is of type character varying"
+# (confirmed live against Neon — this bit every writable enum column here,
+# including ones only ever written through the SQLAdmin panel).
+ingredient_type_enum = PGEnum("allergen_source", "additive", "neutral", name="ingredient_type", schema="kb", create_type=False)
+allergen_certainty_enum = PGEnum("definite", "probable", "possible", name="allergen_certainty", schema="kb", create_type=False)
+term_status_enum = PGEnum("pending", "mapped", "ignored", name="term_status", schema="kb", create_type=False)
 
 allergen_groups = Table(
     "allergen_groups",
@@ -41,7 +53,7 @@ ingredients = Table(
     Column("ingredient_id", UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")),
     Column("canonical_name", CITEXT, nullable=False, unique=True),
     Column("normalised_name", Text),  # generated column, read-only
-    Column("ingredient_type", String, nullable=False),  # kb.ingredient_type enum
+    Column("ingredient_type", ingredient_type_enum, nullable=False),
     Column("is_active", Boolean, nullable=False, server_default=text("true")),
     Column("created_at", TIMESTAMP(timezone=True)),
     Column("updated_at", TIMESTAMP(timezone=True)),
@@ -63,7 +75,7 @@ ingredient_allergens = Table(
     metadata,
     Column("ingredient_id", UUID(as_uuid=True), ForeignKey("kb.ingredients.ingredient_id"), primary_key=True),
     Column("allergen_group_id", UUID(as_uuid=True), ForeignKey("kb.allergen_groups.allergen_group_id"), primary_key=True),
-    Column("certainty", String, nullable=False),  # kb.allergen_certainty enum
+    Column("certainty", allergen_certainty_enum, nullable=False),
     Column("note", Text),
 )
 
@@ -97,7 +109,7 @@ unrecognised_terms = Table(
     Column("normalised_term", Text, nullable=False, unique=True),
     Column("sample_raw_text", Text, nullable=False),
     Column("occurrence_count", Integer, nullable=False),
-    Column("status", String, nullable=False),  # kb.term_status enum
+    Column("status", term_status_enum, nullable=False),
     Column("resolved_ingredient_id", UUID(as_uuid=True), ForeignKey("kb.ingredients.ingredient_id")),
     Column("first_seen_at", TIMESTAMP(timezone=True)),
     Column("last_seen_at", TIMESTAMP(timezone=True)),

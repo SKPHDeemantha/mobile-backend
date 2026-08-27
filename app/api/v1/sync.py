@@ -3,7 +3,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.db import get_db
+from app.core.db import get_admin_db, get_db
 from app.models.kb import mv_allergen_lookup
 from app.schemas.ingredient import KnowledgeBaseRow
 
@@ -31,14 +31,23 @@ async def sync_knowledge_base(
 @router.post("/internal/maintenance/refresh-lookup", status_code=status.HTTP_204_NO_CONTENT)
 async def refresh_lookup(
     x_maintenance_key: str = Header(default=""),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_admin_db),
 ) -> None:
     """Neon's pg_cron can only schedule jobs from the 'postgres' database
     (see sql/00_schema.sql SECTION 12), so this project's cron job instead
     lives in GitHub Actions and calls this endpoint on a schedule. Protected
-    by a shared secret, not JWT — there is no human user on the other end."""
+    by a shared secret, not JWT — there is no human user on the other end.
+
+    Uses the admin (app_admin) connection deliberately: REFRESH MATERIALIZED
+    VIEW requires ownership of the view, and app_api is not granted that —
+    see sql/01_roles_and_grants.sql, which transfers kb.mv_allergen_lookup's
+    ownership to app_admin. Not CONCURRENTLY: the view's unique index is
+    built on an expression (COALESCE(allergen_code, '')), which disqualifies
+    it from CONCURRENTLY's "plain columns only" requirement — see
+    sql/00_schema.sql SECTION 11. A brief lock on this scheduled, low-traffic
+    refresh is an acceptable trade-off."""
     if not settings.maintenance_api_key or x_maintenance_key != settings.maintenance_api_key:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid maintenance key")
-    await db.execute(text("REFRESH MATERIALIZED VIEW CONCURRENTLY kb.mv_allergen_lookup"))
+    await db.execute(text("REFRESH MATERIALIZED VIEW kb.mv_allergen_lookup"))
     await db.commit()
     return None

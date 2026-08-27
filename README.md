@@ -29,10 +29,10 @@ You already have a Neon account; the project itself doesn't exist yet.
    python -c "import secrets; print(secrets.token_urlsafe(32))"
    ```
    Run it once, save the value as `app_api`'s password; run it again for `app_admin`. **Store both passwords in a password manager now** — Postgres never lets you read a password back out.
-5. Build your three connection URLs for `.env` by taking the pooled/direct strings from step 2 and swapping in the `app_api` / `app_admin` username and password (never the Neon-issued owner role — that account should never appear in an `.env` file or a hosting provider's dashboard):
-   - `DATABASE_URL` = pooled endpoint, `app_api` credentials
-   - `DATABASE_URL_DIRECT` = direct endpoint, `app_api` credentials
-   - `ADMIN_DATABASE_URL` = pooled endpoint, `app_admin` credentials
+5. Build your `.env` values:
+   - `DATABASE_URL` = **pooled** endpoint, `app_api` username/password
+   - `ADMIN_DATABASE_URL` = **pooled** endpoint, `app_admin` username/password
+   - `DATABASE_URL_DIRECT` = **direct** endpoint, the original **owner** username/password from step 2 — kept only for your local `.env` (never a deployed environment, see §8), used solely by the three `scripts/*.py` tools, which need CREATE-level rights `app_api`/`app_admin` deliberately don't have.
 6. Sanity check:
    ```bash
    psql "postgresql://app_api:...@...-pooler.../foodlence?sslmode=require" -c "select count(*) from kb.ingredients;"
@@ -123,9 +123,9 @@ python scripts/generate_embeddings.py     # backfills kb.ingredient_embeddings
 
 1. Push this repo to its own GitHub repository (e.g. `foodlence-backend`).
 2. [Render](https://render.com) → New → Web Service → connect the repo → Docker runtime.
-3. Environment variables: everything in `.env.example`, with real values (the three Neon URLs from §1, `JWT_SECRET`, `ADMIN_SESSION_SECRET`, `MAIL_*`, `CORS_ORIGINS` set to wherever the Flutter app / admin browser will be, `MAINTENANCE_API_KEY`, `ENABLE_SEMANTIC_MATCH=false` to start).
+3. Environment variables: `DATABASE_URL` and `ADMIN_DATABASE_URL` from §1, `JWT_SECRET`, `ADMIN_SESSION_SECRET`, `MAIL_*`, `CORS_ORIGINS` set to wherever the Flutter app / admin browser will be, `MAINTENANCE_API_KEY`, `ENABLE_SEMANTIC_MATCH=false` to start. **Do not set `DATABASE_URL_DIRECT` here** — the deployed API never reads it (see `.env.example`); it holds owner-level credentials and has no business sitting in a hosting dashboard.
 4. Health check path: `/health`.
-5. Because Neon's `pg_cron` can only schedule jobs from its `postgres` database (see `sql/00_schema.sql` SECTION 12) and this project's database isn't named that, the periodic `REFRESH MATERIALIZED VIEW CONCURRENTLY kb.mv_allergen_lookup` job runs from GitHub Actions instead (`.github/workflows/ci.yml`, the `refresh-knowledge-base-lookup` job) — set the `API_BASE_URL` and `MAINTENANCE_API_KEY` repo secrets to match your deployed service.
+5. Because Neon's `pg_cron` can only schedule jobs from its `postgres` database (see `sql/00_schema.sql` SECTION 12) and this project's database isn't named that, the periodic `REFRESH MATERIALIZED VIEW kb.mv_allergen_lookup` job runs from GitHub Actions instead (`.github/workflows/ci.yml`, the `refresh-knowledge-base-lookup` job) — set the `API_BASE_URL` and `MAINTENANCE_API_KEY` repo secrets to match your deployed service.
 
 ## 9. Testing
 

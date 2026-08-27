@@ -3,8 +3,18 @@ Transactional data: users, profiles, products, scans, favourites."""
 
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, MetaData, Numeric, SmallInteger, String, Table, Text, text
 from sqlalchemy.dialects.postgresql import CITEXT, TIMESTAMP, UUID
+from sqlalchemy.dialects.postgresql import ENUM as PGEnum
 
 metadata = MetaData(schema="app")
+
+# create_type=False: these Postgres ENUM types already exist (sql/00_schema.sql
+# SECTION 3) — see the matching comment in app/models/kb.py for why this is
+# required, not optional (confirmed live against Neon).
+severity_level_enum = PGEnum("mild", "moderate", "severe", name="severity_level", schema="app", create_type=False)
+match_method_enum = PGEnum("exact", "alias", "fuzzy", "semantic", name="match_method", schema="app", create_type=False)
+scan_status_enum = PGEnum("pending", "processing", "completed", "failed", name="scan_status", schema="app", create_type=False)
+ocr_engine_enum = PGEnum("mlkit_ondevice", "cloud_vision", name="ocr_engine", schema="app", create_type=False)
+platform_enum = PGEnum("android", "ios", name="platform", schema="app", create_type=False)
 
 roles = Table(
     "roles",
@@ -64,7 +74,7 @@ profile_allergens = Table(
     metadata,
     Column("profile_id", UUID(as_uuid=True), ForeignKey("app.profiles.profile_id"), primary_key=True),
     Column("allergen_group_id", UUID(as_uuid=True), primary_key=True),
-    Column("severity", String, nullable=False),  # app.severity_level enum
+    Column("severity", severity_level_enum, nullable=False),
 )
 
 profile_additives = Table(
@@ -113,10 +123,10 @@ scans = Table(
     Column("image_url", String(500)),
     Column("raw_ocr_text", Text, nullable=False),
     Column("ocr_confidence", Numeric(5, 2), nullable=False),
-    Column("ocr_engine", String, nullable=False),  # app.ocr_engine enum
-    Column("device_platform", String),  # app.platform enum
+    Column("ocr_engine", ocr_engine_enum, nullable=False),
+    Column("device_platform", platform_enum),
     Column("processing_ms", Integer),
-    Column("status", String, nullable=False),  # app.scan_status enum
+    Column("status", scan_status_enum, nullable=False),
     Column("scanned_at", TIMESTAMP(timezone=True)),
 )
 
@@ -139,7 +149,7 @@ scan_matches = Table(
     Column("match_id", UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")),
     Column("scan_ingredient_id", UUID(as_uuid=True), ForeignKey("app.scan_ingredients.scan_ingredient_id"), nullable=False),
     Column("ingredient_id", UUID(as_uuid=True), nullable=False),
-    Column("match_method", String, nullable=False),  # app.match_method enum
+    Column("match_method", match_method_enum, nullable=False),
     Column("match_score", Numeric, nullable=False),
     Column("is_profile_match", Boolean, nullable=False, server_default=text("false")),  # trigger-computed; never write this from Python
 )
