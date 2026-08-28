@@ -30,9 +30,12 @@ async def test_alias_match(raw_conn):
 
 async def test_fuzzy_match_tolerates_ocr_typo(raw_conn):
     # 'whey solids' is a curated alias of 'Whey powder'; a one-character OCR
-    # slip ('wheysolids' concatenated, or a dropped letter) should still
-    # resolve via trigram similarity rather than returning nothing.
-    results = await _match(raw_conn, "why solds")
+    # slip (here a dropped 'i': "whey solds") should still resolve via
+    # trigram similarity rather than returning nothing. NB the fuzzy stage
+    # deliberately stops at p_fuzzy_threshold=0.45 — mangling both words at
+    # once ("why solds", sim 0.375) is meant to miss, so an allergen check
+    # never fires on a wild guess.
+    results = await _match(raw_conn, "whey solds")
     assert results, "expected at least one fuzzy match for a near-miss spelling"
     assert results[0]["match_method"] in ("fuzzy", "alias", "exact")
 

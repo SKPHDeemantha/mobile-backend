@@ -35,6 +35,16 @@ from app.core.dsn import to_asyncpg_dsn  # noqa: E402
 
 RAW_DSN = to_asyncpg_dsn(os.environ["DATABASE_URL"])
 
+# Safety net: _reset_schema() runs DROP SCHEMA ... CASCADE. Never let that
+# point at the live Neon database, no matter what DATABASE_URL is set to.
+if "neon.tech" in RAW_DSN:
+    raise RuntimeError(
+        "Refusing to run the test suite against a Neon database - the schema "
+        "fixture runs 'DROP SCHEMA kb, app, audit CASCADE'. Unset DATABASE_URL "
+        "(the suite then defaults to the local docker-compose Postgres) or set "
+        "it to a throwaway database."
+    )
+
 
 async def _reset_schema() -> None:
     conn = await asyncpg.connect(RAW_DSN)
@@ -50,8 +60,26 @@ async def _reset_schema() -> None:
 
 @pytest.fixture(scope="session", autouse=True)
 def _prepare_database():
-    asyncio.get_event_loop().run_until_complete(_reset_schema())
+    # asyncio.run() (not get_event_loop().run_until_complete()) so this
+    # bootstrap uses — and fully closes — its own loop on Python 3.13,
+    # instead of leaving a lingering deprecated loop behind.
+    asyncio.run(_reset_schema())
     yield
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _dispose_engines_between_tests():
+    """pytest-asyncio (auto mode) runs each async test on its own event
+    loop. SQLAlchemy's async engine pools connections, so without this the
+    second test is handed an asyncpg connection opened on the first test's
+    now-closed loop -> `RuntimeError: Event loop is closed` in do_ping
+    (pool_pre_ping) and a cascade of AttributeErrors. Disposing after every
+    test forces each one to open its own connections on its own loop."""
+    yield
+    from app.core.db import admin_engine, engine
+
+    await engine.dispose()
+    await admin_engine.dispose()
 
 
 @pytest_asyncio.fixture
