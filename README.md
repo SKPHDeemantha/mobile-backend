@@ -72,6 +72,13 @@ python scripts/seed_knowledge_base.py
 
 `scripts/seed_data/ingredients.csv` ships with ~40 common allergen sources and additives — enough to exercise every stage of the matching cascade, but nowhere near the proposal's 500+ entry commitment (§9.1). Growing that CSV (or adding more files and passing them as extra arguments to the script) is ongoing content work, not a one-time setup step. The script is idempotent — re-running it updates existing rows rather than duplicating them.
 
+### Sinhala / Tamil translations
+
+The two target languages are handled differently:
+
+- **Sinhala (`si`)** — served from the database. `seed_data/translations_si.csv` (columns `canonical_name`, `display_name`, `explanation`) is loaded by `seed_knowledge_base.py` straight after the English rows, into `kb.ingredient_translations` (`generated_by = 'human'`). Regenerate it from the curated list in `scripts/build_translations_si.py`. A scan requested in `si` (the `language` field on `POST /scans`, set by the app from Settings ▸ Language) then comes back localised; any `canonical_name` absent from the file falls back to English, so it can be grown incrementally alongside `ingredients.csv`.
+- **Tamil (`ta`)** — translated on-device by the Flutter app with Google ML Kit (`mobile-frontend/lib/services/translation_service.dart`); ML Kit has no Sinhala model. The backend has no `ta` rows and returns English for that language, which the app then translates before display. An optional `translations_ta.csv` is still loaded if present (same format), taking precedence over the on-device path.
+
 ## 4. Why not Alembic
 
 The schema (`sql/00_schema.sql`) is hand-authored SQL with heavy trigger and function logic — the safety-critical `is_profile_match` flag, the matching cascade, the audit trail. Alembic's autogenerate diffs a Python ORM model against the database and would either miss all of that logic or fight it. Instead:

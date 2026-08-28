@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import CurrentUser, get_current_user, get_optional_user
 from app.core.db import get_db
 from app.models.domain import brands, product_label_versions, products, profiles, scan_ingredients, scan_matches, scans
-from app.schemas.scan import ProductIn, ScanCreate, ScanListItemOut, ScanSummaryOut
+from app.schemas.scan import LANGUAGES, ProductIn, ScanCreate, ScanListItemOut, ScanSummaryOut
 from app.services.embeddings import maybe_embed
 from app.services.matching import log_unrecognised_term, match_ingredient, scan_summary
 
@@ -128,7 +128,7 @@ async def create_scan(
     await db.execute(update(scans).where(scans.c.scan_id == scan_id).values(status="completed"))
     await db.commit()
 
-    summary = await scan_summary(db, scan_id)
+    summary = await scan_summary(db, scan_id, body.language)
     return ScanSummaryOut(**summary)
 
 
@@ -150,9 +150,14 @@ async def list_scans(
 
 
 @router.get("/{scan_id}", response_model=ScanSummaryOut)
-async def get_scan(scan_id: uuid.UUID, current: CurrentUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> ScanSummaryOut:
+async def get_scan(
+    scan_id: uuid.UUID,
+    language: str = "en",
+    current: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ScanSummaryOut:
     owned = await db.execute(select(scans.c.scan_id).where(scans.c.scan_id == scan_id, scans.c.user_id == current.user_id))
     if owned.first() is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Scan not found")
-    summary = await scan_summary(db, scan_id)
+    summary = await scan_summary(db, scan_id, language if language in LANGUAGES else "en")
     return ScanSummaryOut(**summary)

@@ -117,6 +117,46 @@ async def seed_file(conn: asyncpg.Connection, path: str) -> None:
     print(f"{path}: done")
 
 
+async def seed_translations_file(conn: asyncpg.Connection, path: str, language_code: str) -> None:
+    """Loads scripts/seed_data/translations_<lang>.csv (canonical_name,
+    display_name, explanation) into kb.ingredient_translations. Rows whose
+    canonical_name is unknown are skipped with a warning — the files can be
+    filled in incrementally."""
+    with open(path, encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+
+    print(f"{path}: {len(rows)} rows ({language_code})")
+    seeded = skipped = 0
+    for row in rows:
+        name = (row.get("canonical_name") or "").strip()
+        display = (row.get("display_name") or "").strip()
+        if not name or not display:
+            continue
+        ingredient_id = await conn.fetchval(
+            "SELECT ingredient_id FROM kb.ingredients WHERE canonical_name = $1", name
+        )
+        if ingredient_id is None:
+            print(f"  WARNING: no ingredient named '{name}' — translation skipped")
+            skipped += 1
+            continue
+        await conn.execute(
+            """
+            INSERT INTO kb.ingredient_translations
+                (ingredient_id, language_code, display_name, explanation, generated_by)
+            VALUES ($1, $2, $3, $4, 'human')
+            ON CONFLICT (ingredient_id, language_code) DO UPDATE
+                SET display_name = EXCLUDED.display_name,
+                    explanation  = EXCLUDED.explanation
+            """,
+            ingredient_id,
+            language_code,
+            display,
+            (row.get("explanation") or "").strip() or None,
+        )
+        seeded += 1
+    print(f"{path}: done — {seeded} seeded, {skipped} skipped")
+
+
 async def main() -> None:
     url = os.environ.get("DATABASE_URL_DIRECT")
     if not url:
@@ -125,11 +165,19 @@ async def main() -> None:
     dsn = to_asyncpg_dsn(url)
 
     paths = sys.argv[1:] or [DEFAULT_CSV]
+    seed_dir = os.path.dirname(DEFAULT_CSV)
 
     conn = await asyncpg.connect(dsn)
     try:
         for path in paths:
             await seed_file(conn, path)
+        # Sinhala / Tamil display_name + explanation, loaded after the
+        # English rows so every ingredient_id already exists. Optional —
+        # a missing file just means that language stays English.
+        for lang in ("si", "ta"):
+            tpath = os.path.join(seed_dir, f"translations_{lang}.csv")
+            if os.path.exists(tpath):
+                await seed_translations_file(conn, tpath, lang)
         # Not CONCURRENTLY — see sql/00_schema.sql SECTION 11: the view's
         # unique index is expression-based, which disqualifies it.
         await conn.execute("REFRESH MATERIALIZED VIEW kb.mv_allergen_lookup")

@@ -5,6 +5,9 @@ from pydantic import BaseModel, Field
 
 OCR_ENGINES = {"mlkit_ondevice", "cloud_vision"}
 PLATFORMS = {"android", "ios"}
+# Must match kb.languages (sql/00_schema.sql SECTION 5.1). Drives which
+# kb.ingredient_translations row app.fn_scan_summary returns.
+LANGUAGES = {"en", "si", "ta"}
 
 
 class ProductIn(BaseModel):
@@ -24,12 +27,17 @@ class ScanCreate(BaseModel):
     ocr_engine: str = "mlkit_ondevice"
     device_platform: str | None = None
     product: ProductIn | None = None
+    # Language for the returned findings' display_name / explanation. The
+    # scan itself is language-neutral; only the summary is localised.
+    language: str = "en"
 
     def validate_enums(self) -> None:
         if self.ocr_engine not in OCR_ENGINES:
             raise ValueError(f"ocr_engine must be one of {OCR_ENGINES}")
         if self.device_platform is not None and self.device_platform not in PLATFORMS:
             raise ValueError(f"device_platform must be one of {PLATFORMS}")
+        if self.language not in LANGUAGES:
+            raise ValueError(f"language must be one of {LANGUAGES}")
 
 
 class ScanSummaryOut(BaseModel):
